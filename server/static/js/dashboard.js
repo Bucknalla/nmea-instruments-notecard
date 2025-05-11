@@ -13,7 +13,7 @@ function createCompassMarkings(containerId) {
 document.addEventListener('DOMContentLoaded', function() {
     createCompassMarkings('heading-markings');
     createCompassMarkings('wind-markings');
-    
+
     // Initialize map
     const map = L.map('map', {
         zoomControl: true,
@@ -23,10 +23,10 @@ document.addEventListener('DOMContentLoaded', function() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
-    
+
     // Move zoom control to top right
     map.zoomControl.setPosition('topright');
-    
+
     // Create custom boat icon using Font Awesome
     const boatIcon = L.divIcon({
         html: '<i class="fas fa-sailboat" style="color: #0066cc; font-size: 24px;"></i>',
@@ -34,14 +34,14 @@ document.addEventListener('DOMContentLoaded', function() {
         iconSize: [24, 24],
         iconAnchor: [12, 12]
     });
-    
+
     // Create a marker that we'll update with the boat icon
     const marker = L.marker([0, 0], {
         icon: boatIcon,
         rotationAngle: 0,
         rotationOrigin: 'center center'
     }).addTo(map);
-    
+
     // Store map and marker in window object for access in updateDisplay
     window.map = map;
     window.marker = marker;
@@ -77,8 +77,19 @@ function updateDisplay(data) {
             data.parsed_data.INS.forEach(msg => {
                 if (msg.type === 'MWV') {
                     document.getElementById('wind-speed').textContent = msg.data[2];
-                    document.getElementById('wind-angle').textContent = msg.data[0];
-                    updateCompass('wind-compass', parseFloat(msg.data[0]));
+                    let windAngle = parseFloat(msg.data[0]);
+                    let displayAngle = windAngle;
+                    let side = '';
+
+                    if (windAngle > 180) {
+                        displayAngle = 360 - windAngle;
+                        side = ' (port)';
+                    } else {
+                        side = ' (starboard)';
+                    }
+
+                    document.getElementById('wind-angle').textContent = displayAngle.toFixed(1) + side;
+                    updateCompass('wind-compass', windAngle);
                 } else if (msg.type === 'DBT') {
                     document.getElementById('depth-dbt').textContent = msg.data[2];
                 } else if (msg.type === 'DPT') {
@@ -97,11 +108,11 @@ function updateDisplay(data) {
             if (latitude && longitude) {
                 const newLatLng = [latitude, longitude];
                 window.marker.setLatLng(newLatLng);
-                
+
                 // Get current center and calculate distance
                 const currentCenter = window.map.getCenter();
                 const distance = currentCenter.distanceTo(newLatLng);
-                
+
                 // If this is the first update or the location has changed significantly (> 1000 meters)
                 if (!window.lastLocation || distance > 1000) {
                     window.map.setView(newLatLng, 13);
@@ -129,4 +140,4 @@ function fetchData() {
 setInterval(fetchData, 1000);
 
 // Initial fetch
-fetchData(); 
+fetchData();
