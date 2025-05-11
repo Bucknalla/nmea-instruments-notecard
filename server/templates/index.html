@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NMEA Data Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        .data-card {
+            margin-bottom: 1rem;
+            height: 100%;
+        }
+        .value-display {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        .unit {
+            font-size: 0.8rem;
+            color: #666;
+        }
+        .compass-container {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
+            position: relative;
+            margin-bottom: 12rem;
+        }
+        .compass {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            position: relative;
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .compass-face {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            transition: transform 0.5s ease-out;
+        }
+        .compass-pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+        }
+        .compass-pointer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-left: 16px solid transparent;
+            border-right: 16px solid transparent;
+            border-top: 32px solid red;
+            transform: translateX(-50%);
+            filter: drop-shadow(0 3px 3px rgba(0,0,0,0.3));
+        }
+        .compass-label {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            bottom: -35px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .compass-markings {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+        .compass-marking {
+            position: absolute;
+            width: 2px;
+            height: 10px;
+            background: #666;
+            left: 50%;
+            transform-origin: 50% 100px;
+        }
+        .compass-marking.major {
+            height: 15px;
+            background: #333;
+        }
+        .compass-cardinal {
+            position: absolute;
+            font-weight: bold;
+            color: #333;
+            text-shadow: 0 0 2px rgba(255,255,255,0.8);
+            font-size: 1.2rem;
+        }
+        .compass-cardinal.north { top: 15px; left: 50%; transform: translateX(-50%); }
+        .compass-cardinal.east { right: 15px; top: 50%; transform: translateY(-50%); }
+        .compass-cardinal.south { bottom: 15px; left: 50%; transform: translateX(-50%); }
+        .compass-cardinal.west { left: 15px; top: 50%; transform: translateY(-50%); }
+        .compass-degree {
+            position: absolute;
+            font-size: 0.7rem;
+            color: #666;
+        }
+        /* Wind compass specific styles */
+        #wind-compass .compass-cardinal {
+            font-size: 1rem;
+            font-weight: normal;
+        }
+        /* Wind compass pointer should be grey */
+        #wind-compass ~ .compass-pointer::after,
+        #wind-compass .compass-pointer::after {
+            border-top: 32px solid #888;
+        }
+        .wind-pointer::after {
+            border-top: 32px solid #888;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <h1 class="mb-4">Instrument Panel (NMEA)</h1>
+        
+        <div class="row">
+            <!-- Heading Data -->
+            <div class="col-md-4">
+                <div class="card data-card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Heading & Magnetic Variation</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="compass-container mb-3">
+                            <div class="compass">
+                                <div class="compass-pointer"></div>
+                                <div class="compass-face" id="heading-compass">
+                                    <div class="compass-markings" id="heading-markings"></div>
+                                    <div class="compass-cardinal north">N</div>
+                                    <div class="compass-cardinal east">E</div>
+                                    <div class="compass-cardinal south">S</div>
+                                    <div class="compass-cardinal west">W</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 text-center">
+                                <div class="mb-3">
+                                    <label>HDG</label>
+                                    <div class="value-display" id="hdg-value">--</div>
+                                    <span class="unit">degrees</span>
+                                </div>
+                            </div>
+                            <div class="col-6 text-center">
+                                <div class="mb-3">
+                                    <label>HDM</label>
+                                    <div class="value-display" id="hdm-value">--</div>
+                                    <span class="unit">degrees</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Wind Data -->
+            <div class="col-md-4">
+                <div class="card data-card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Wind Angle & Speed</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="compass-container mb-3">
+                            <div class="compass">
+                                <div class="compass-pointer wind-pointer"></div>
+                                <div class="compass-face" id="wind-compass">
+                                    <!-- SVG overlay for colored arcs (now inside the rotating face) -->
+                                    <svg class="wind-arcs" width="200" height="200" style="position:absolute;top:0;left:0;z-index:0;pointer-events:none;">
+                                        <!-- Red arcs: 0-60 port -->
+                                        <path d="M100,20 A80,80 0 0,1 169.28,60" stroke="#388e3c" stroke-width="12" fill="none" />
+                                        <!-- Green arcs: 0-60 starboard -->
+                                        <path d="M100,20 A80,80 0 0,0 30.72,60" stroke="#d32f2f" stroke-width="12" fill="none" />
+
+                                    </svg>
+                                    <div class="compass-markings" id="wind-markings"></div>
+                                    <div class="compass-cardinal north">0°</div>
+                                    <div class="compass-cardinal east">90°</div>
+                                    <div class="compass-cardinal south">180°</div>
+                                    <div class="compass-cardinal west">90°</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 text-center">
+                                <div class="mb-3">
+                                    <label>Wind Speed</label>
+                                    <div class="value-display" id="wind-speed">--</div>
+                                    <span class="unit">knots</span>
+                                </div>
+                            </div>
+                            <div class="col-6 text-center">
+                                <div class="mb-3">
+                                    <label>Wind Angle</label>
+                                    <div class="value-display" id="wind-angle">--</div>
+                                    <span class="unit">degrees</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Depth Data -->
+            <div class="col-md-4">
+                <div class="card data-card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Additional Instruments</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="mb-3">
+                                    <label>Depth Below Transducer</label>
+                                    <div class="value-display" id="depth-dbt">--</div>
+                                    <span class="unit">meters</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="mb-3">
+                                    <label>Depth of Water</label>
+                                    <div class="value-display" id="depth-dpt">--</div>
+                                    <span class="unit">meters</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="mb-3">
+                                    <label>Water Temp</label>
+                                    <div class="value-display" id="water-temp">--</div>
+                                    <span class="unit">°C</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Display -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Location</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Raw Data Display -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Raw NMEA Data</h5>
+                    </div>
+                    <div class="card-body">
+                        <pre id="raw-data" style="max-height: 200px; overflow-y: auto;"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html> 
